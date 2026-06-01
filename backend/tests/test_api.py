@@ -38,3 +38,8 @@ async def test_docs_available():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/docs")
     assert response.status_code == 200
+
+def test_intentionally_broken():
+    """Этот тест специально сломан — симулируем баг в коде"""
+    result = 2 + 2
+    assert result == 5, "Математика сломалась!"
