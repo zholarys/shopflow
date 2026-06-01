@@ -11,6 +11,11 @@ jobs:
     name: Test Backend
     runs-on: ubuntu-latest
     
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: test_secret_key
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -69,5 +74,4 @@ jobs:
       - name: Summary
         run: |
           echo "✅ Build successful!"
-          echo "Backend: shopflow-backend:${{ github.sha }}"
-          echo "Frontend: shopflow-frontend:${{ github.sha }}"
+          echo "Commit: ${{ github.sha }}"
