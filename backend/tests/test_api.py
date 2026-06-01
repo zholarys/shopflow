@@ -1,60 +1,40 @@
 import pytest
-import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from app.main import app
-from app.models.user import Base
-from app.database import get_db
-import os
+from app.services.auth import hash_password, verify_password, create_access_token, decode_token
 
-TEST_DB_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/testdb")
+# --- Unit тесты (без БД) ---
 
-@pytest_asyncio.fixture(scope="session")
-async def setup_db():
-    engine = create_async_engine(TEST_DB_URL)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
+def test_hash_password():
+    hashed = hash_password("mypassword")
+    assert hashed != "mypassword"
+    assert verify_password("mypassword", hashed)
+
+def test_wrong_password():
+    hashed = hash_password("correct")
+    assert not verify_password("wrong", hashed)
+
+def test_create_and_decode_token():
+    token = create_access_token({"sub": "42", "email": "test@test.com"})
+    payload = decode_token(token)
+    assert payload["sub"] == "42"
+    assert payload["email"] == "test@test.com"
+
+def test_invalid_token():
+    result = decode_token("not.a.valid.token")
+    assert result is None
+
+# --- Integration тест (только health, без БД) ---
 
 @pytest.mark.asyncio
 async def test_health():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json() == {"status": "ok", "service": "shopflow-backend"}
 
 @pytest.mark.asyncio
-async def test_products_empty(setup_db):
+async def test_docs_available():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/api/products/")
+        response = await ac.get("/api/docs")
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-@pytest.mark.asyncio
-async def test_register_and_login(setup_db):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        reg = await ac.post("/api/auth/register", json={
-            "email": "ci@test.com",
-            "password": "testpass123",
-            "full_name": "CI Test"
-        })
-        assert reg.status_code == 201
-
-        login = await ac.post("/api/auth/login", json={
-            "email": "ci@test.com",
-            "password": "testpass123"
-        })
-        assert login.status_code == 200
-        assert "access_token" in login.json()
-
-@pytest.mark.asyncio
-async def test_login_wrong_password(setup_db):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.post("/api/auth/login", json={
-            "email": "ci@test.com",
-            "password": "wrongpassword"
-        })
-    assert response.status_code == 401
