@@ -1,15 +1,21 @@
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from app.redis import init_redis, close_redis
 from app.routers import auth, products, orders
+from app.logger import get_logger
+
+logger = get_logger("shopflow")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting ShopFlow backend")
     await init_redis()
     yield
     await close_redis()
+    logger.info("Shutting down ShopFlow backend")
 
 app = FastAPI(
     title="ShopFlow API",
@@ -18,6 +24,18 @@ app = FastAPI(
     redoc_url="/api/redoc",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = round((time.time() - start) * 1000, 2)
+    
+    # Не логируем /metrics чтобы не засорять логи
+    if request.url.path != "/metrics":
+        logger.info(f"{request.method} {request.url.path} {response.status_code} {duration}ms")
+    
+    return response
 
 app.add_middleware(
     CORSMiddleware,

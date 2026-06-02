@@ -6,6 +6,9 @@ from app.database import get_db
 from app.models.order import Order
 from app.models.product import Product
 from app.schemas.order import OrderCreate, OrderOut
+from app.logger import get_logger
+
+logger = get_logger("orders")
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -18,8 +21,10 @@ async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
         result = await db.execute(select(Product).where(Product.id == item.product_id))
         product = result.scalar_one_or_none()
         if not product:
+            logger.warning(f"Product not found: id={item.product_id}")
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
         if product.stock < item.quantity:
+            logger.warning(f"Not enough stock: product={product.name} stock={product.stock} requested={item.quantity}")
             raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
 
         items.append({
@@ -41,6 +46,8 @@ async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
     db.add(order)
     await db.flush()
     await db.refresh(order)
+    
+    logger.info(f"Order created: id={order.id} total={order.total} payment={order.payment_id}")
     return order
 
 @router.get("/", response_model=list[OrderOut])
