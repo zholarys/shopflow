@@ -37,3 +37,4 @@ async def test_health():
 async def test_docs_available():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.get("/api/docs")
+    assert response.status_code == 200

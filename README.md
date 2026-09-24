@@ -1,69 +1,64 @@
-# ShopFlow — Full-Stack E-Commerce DevOps Project
+# ShopFlow — DevOps learning project
 
-A production-ready e-commerce platform built to demonstrate real-world DevOps practices.
+A local e-commerce demo combining React, FastAPI, PostgreSQL, Redis, Nginx, Prometheus, Grafana and Loki/Alloy. This is a portfolio lab, not a production-ready payment system.
 
-## Architecture
+## Start from a fresh clone
 
-- React Frontend + FastAPI Backend
-- PostgreSQL (database) + Redis (caching)
-- Nginx as reverse proxy
-- Prometheus + Grafana + Loki (monitoring & logging)
-- GitHub Actions (CI/CD)
-- Docker Compose (orchestration)
+Requires Docker Engine, Docker Compose v2+ and a host with enough resources for the full monitoring stack. Ports 80, 3000, 9090, 3100, 6379, 5433 and 8000 must be available on loopback.
 
-## Tech Stack
+```bash
+git clone https://github.com/zholarys/shopflow
+cd shopflow
+cp .env.example .env
+# Edit .env: replace all example passwords and SECRET_KEY.
+# Generate a JWT key with: openssl rand -hex 32
+docker compose up --build -d postgres redis backend
+docker compose exec -T backend python -m app.init_db
+docker compose exec -T backend python -m app.seed
+docker compose up --build -d
+curl --fail http://localhost/api/health
+```
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, Vite |
-| Backend | FastAPI, SQLAlchemy |
-| Database | PostgreSQL 16 |
-| Cache | Redis 7 |
-| Proxy | Nginx |
-| Monitoring | Prometheus, Grafana, Loki |
-| CI/CD | GitHub Actions |
-| Containers | Docker, Docker Compose |
+Open http://localhost. Register a user before placing an order. Re-running the seed command skips existing demo products by name. `init_db` creates missing tables but is not a schema migration system.
 
-## Features
+## Authentication and application limits
 
-- JWT authentication (register/login)
-- Product catalog with search and category filter
-- Shopping cart and orders
-- Redis caching — handles 1000+ concurrent users
-- Real-time log monitoring via Loki + Grafana
-- Automated CI/CD pipeline with tests
+JWTs are checked on order endpoints. Orders belong to the authenticated user and listing is restricted to that user. Creating products requires an admin account; registration creates ordinary users. Order quantities must be positive and duplicate products are aggregated. PostgreSQL row locks serialize stock changes inside the order transaction.
 
-## Load Testing Results
+Payments are mocked. Money is still represented as floating point, and product-cache invalidation uses a 60-second TTL. This project needs proper decimal money handling, migrations, cache invalidation, rate limits, backups and operational hardening before production use. `/api/health` checks the HTTP process, not database/Redis readiness.
 
-| Scenario | Users | Error Rate | p95 Response |
-|----------|-------|------------|--------------|
-| Without cache | 1000 | 31% | 3.26s |
-| With Redis cache | 1000 | 0.48% | 229ms |
+## Monitoring and logs
 
-## Quick Start
-
-    git clone https://github.com/zholarys/shopflow
-    cd shopflow
-    cp .env.example .env
-    docker compose up -d
-
-Open http://localhost
-
-## CI/CD Pipeline
-
-Every push to main triggers:
-1. Backend unit tests (pytest)
-2. Frontend lint (ESLint)
-3. Docker image build
-4. Failed tests block deployment
-
-## Monitoring
-
-- Grafana: http://localhost:3000
+- Grafana: http://localhost:3000 (admin and the password from `.env`)
 - Prometheus: http://localhost:9090
-- Loki logs: http://localhost:3100
+- Loki API: http://localhost:3100 (not a standalone web UI)
 
-## Load Testing
+Prometheus and Loki data sources are provisioned in Grafana. In Explore, select Loki and query `{project="shopflow",service="backend"}`. Alloy reads this Compose project's container logs. Access to Docker socket is powerful even with a read-only mount; this is a local lab configuration. A one-shot init container sets the Loki volume owner, and Loki retention is configured for seven days (deletion is asynchronous).
 
-    k6 run k6/load_test.js
-    k6 run k6/stress_test.js
+All published ports default to loopback. `HTTP_BIND_ADDRESS` can expose the HTTP proxy on a server; configure TLS and firewall rules before making it public. The backend image runs without root and without development auto-reload.
+
+## CI and checks
+
+GitHub Actions runs backend tests, frontend lint, and Docker image builds. It does not publish images or deploy them; a failed check blocks the build job, not a deployment system.
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
+
+Backend tests include authorization, ownership and input-validation regression checks. See the workflow for test environment variables and dependencies.
+
+## Load testing
+
+```bash
+k6 run k6/load_test.js
+k6 run --summary-export=stress-results.json k6/stress_test.js
+```
+
+These scripts exercise catalog and health requests, not a complete authenticated checkout workload. Prior latency/error figures are not presented as reproducible benchmarks: record host resources, commit, cache state, dataset and k6 output for any new comparison.
+
+## Stop
+
+`docker compose down` preserves volumes. `docker compose down -v` (also `make clean`) permanently deletes the lab databases, Grafana state and stored logs.

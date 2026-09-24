@@ -1,12 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 class OrderItem(BaseModel):
-    product_id: int
-    quantity: int
+    product_id: int = Field(gt=0)
+    quantity: int = Field(gt=0)
 
 class OrderCreate(BaseModel):
-    items: list[OrderItem]
+    items: list[OrderItem] = Field(min_length=1)
 
 class OrderOut(BaseModel):
     id: int
