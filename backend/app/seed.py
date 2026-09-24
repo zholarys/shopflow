@@ -1,6 +1,7 @@
 import asyncio
 from app.database import AsyncSessionLocal
 from app.models.product import Product
+from sqlalchemy import select
 
 products = [
     Product(name="iPhone 15", description="Apple iPhone 15 128GB", price=799.99, stock=10, category="phones", image_url="https://picsum.photos/seed/iphone/400/300"),
@@ -12,10 +13,14 @@ products = [
 ]
 
 async def seed():
+    added = 0
     async with AsyncSessionLocal() as db:
         for p in products:
-            db.add(p)
+            exists = await db.scalar(select(Product.id).where(Product.name == p.name))
+            if exists is None:
+                db.add(p)
+                added += 1
         await db.commit()
-    print(f"Seeded {len(products)} products")
+    print(f"Added {added} missing demo products")
 
 asyncio.run(seed())

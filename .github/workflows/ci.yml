@@ -1,4 +1,4 @@
-name: ShopFlow CI/CD
+name: ShopFlow CI
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
       REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: test_secret_key
+      SECRET_KEY: ci_only_secret_key_at_least_32_chars
 
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
         run: |
           cd backend
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+          pip install pytest pytest-asyncio httpx aiosqlite
 
       - name: Run tests
         run: |
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: |

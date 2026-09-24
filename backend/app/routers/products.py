@@ -6,6 +6,8 @@ from app.database import get_db
 from app.models.product import Product
 from app.schemas.product import ProductOut, ProductCreate
 from app.redis import get_redis
+from app.dependencies import admin_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -73,7 +75,8 @@ async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
     return product
 
 @router.post("/", response_model=ProductOut, status_code=201)
-async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)):
+async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db),
+                         user: User = Depends(admin_user)):
     product = Product(**data.model_dump())
     db.add(product)
     await db.flush()

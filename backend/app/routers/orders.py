@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.order import Order
+from app.models.user import User
+from app.dependencies import current_user
 from app.models.product import Product
 from app.schemas.order import OrderCreate, OrderOut
 from app.logger import get_logger
@@ -13,31 +15,36 @@ logger = get_logger("orders")
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 @router.post("/", response_model=OrderOut, status_code=201)
-async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
+async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db),
+                       user: User = Depends(current_user)):
     items = []
     total = 0.0
 
+    # Aggregate repeated products, and lock in a stable order to avoid overselling.
+    quantities = {}
     for item in data.items:
-        result = await db.execute(select(Product).where(Product.id == item.product_id))
+        quantities[item.product_id] = quantities.get(item.product_id, 0) + item.quantity
+    for product_id, quantity in sorted(quantities.items()):
+        result = await db.execute(select(Product).where(Product.id == product_id).with_for_update())
         product = result.scalar_one_or_none()
         if not product:
-            logger.warning(f"Product not found: id={item.product_id}")
-            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-        if product.stock < item.quantity:
-            logger.warning(f"Not enough stock: product={product.name} stock={product.stock} requested={item.quantity}")
+            logger.warning(f"Product not found: id={product_id}")
+            raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+        if product.stock < quantity:
+            logger.warning(f"Not enough stock: product={product.name} stock={product.stock} requested={quantity}")
             raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
 
         items.append({
             "product_id": product.id,
             "name": product.name,
-            "quantity": item.quantity,
+            "quantity": quantity,
             "price": product.price,
         })
-        total += product.price * item.quantity
-        product.stock -= item.quantity
+        total += product.price * quantity
+        product.stock -= quantity
 
     order = Order(
-        user_id=1,
+        user_id=user.id,
         items=items,
         total=round(total, 2),
         status="paid",
@@ -51,6 +58,7 @@ async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
     return order
 
 @router.get("/", response_model=list[OrderOut])
-async def list_orders(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Order))
+async def list_orders(db: AsyncSession = Depends(get_db),
+                      user: User = Depends(current_user)):
+    result = await db.execute(select(Order).where(Order.user_id == user.id))
     return result.scalars().all()

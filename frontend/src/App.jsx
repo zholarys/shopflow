@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const api = axios.create({ baseURL: "http://localhost/api" });
+const api = axios.create({ baseURL: "/api" });
 
 export default function App() {
   const [products, setProducts] = useState([]);
